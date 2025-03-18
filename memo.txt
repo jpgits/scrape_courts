@@ -1,0 +1,2 @@
+pdfminer.six
+pdf2txt.py -t xml -o output.xml input.pdf
