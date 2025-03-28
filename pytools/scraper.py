@@ -1,31 +1,13 @@
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict
-from requests import Session
+from typing import List
+import requests
 from bs4 import BeautifulSoup
-
-@dataclass
-class Judgment:
-    裁判例集: str
-    裁判種別: Optional[str] = None
-    法廷名: Optional[str] = None
-    裁判年月日: Optional[str] = None
-    事件名: Optional[str] = None
-    事件番号: Optional[str] = None
-    判示事項: Optional[str] = None
-    裁判要旨: Optional[str] = None
-    結果: Optional[str] = None
-    原審裁判所名: Optional[str] = None
-    原審裁判年月日: Optional[str] = None
-    原審事件番号: Optional[str] = None
-    判例集等巻号頁: Optional[str] = None
-    参照法条: Optional[str] = None
-    全文: List[Dict[str, str]] = field(default_factory=list)
+from models import Judgment
 
 class CourtScraper:
     BASE_URL = "https://www.courts.go.jp"
 
     def __init__(self, court_type: str = "recentlist2", max_pages: int = 2):
-        self.session = Session()
+        self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": (
                 "Mozilla/5.0 (X11; Linux x86_64) "
@@ -38,7 +20,6 @@ class CourtScraper:
 
     def get_recent_judgment_urls(self) -> List[str]:
         urls = []
-
         for page in range(1, self.max_pages + 1):
             response = self.session.get(
                 f"{self.BASE_URL}/app/hanrei_jp/{self.court_type}",
@@ -46,7 +27,6 @@ class CourtScraper:
             )
             soup = BeautifulSoup(response.text, "html.parser")
             rows = soup.select("div.module-sub-page-parts-table tr")
-
             urls.extend([
                 row.find("a")["href"]
                 for row in rows
@@ -57,7 +37,6 @@ class CourtScraper:
     def get_judgment_detail(self, url: str) -> Judgment:
         response = self.session.get(f"{self.BASE_URL}{url}")
         soup = BeautifulSoup(response.text, "html.parser")
-
         court_data = {}
 
         title_block = soup.find("div", class_="module-sub-page-parts-default-2")
@@ -68,10 +47,8 @@ class CourtScraper:
         for block in detail_blocks:
             for dl in block.find_all("dl"):
                 name = dl.find("dt").text.strip()
-
                 if name == "判例集等巻・号・頁":
                     name = "判例集等巻号頁"
-
                 if "全文" in name:
                     value = [
                         {
@@ -81,26 +58,5 @@ class CourtScraper:
                     ]
                 else:
                     value = "".join(dl.find("p").text.split())
-
                 court_data[name] = value
-
         return Judgment(**court_data)
-
-
-if __name__ == "__main__":
-    judgment_fields = list(Judgment.__annotations__.keys())
-    print(judgment_fields)
-
-    取得器 = CourtScraper()
-    判例群 = []
-
-    for 判例url in 取得器.get_recent_judgment_urls():
-        判例 = 取得器.get_judgment_detail(判例url)
-        判例群.append(判例)
-
-    for 判例 in 判例群:
-        print("-" * 50)
-        for 項目 in judgment_fields:
-            if hasattr(判例, 項目):
-                print(f"{項目}: {getattr(判例, 項目)}")
-
