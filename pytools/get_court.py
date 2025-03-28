@@ -1,97 +1,106 @@
-from time import sleep
-from pprint import pprint
-
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict
 from requests import Session
 from bs4 import BeautifulSoup
 
+@dataclass
+class Judgment:
+    裁判例集: str
+    裁判種別: Optional[str] = None
+    法廷名: Optional[str] = None
+    裁判年月日: Optional[str] = None
+    事件名: Optional[str] = None
+    事件番号: Optional[str] = None
+    判示事項: Optional[str] = None
+    裁判要旨: Optional[str] = None
+    結果: Optional[str] = None
+    原審裁判所名: Optional[str] = None
+    原審裁判年月日: Optional[str] = None
+    原審事件番号: Optional[str] = None
+    判例集等巻号頁: Optional[str] = None
+    参照法条: Optional[str] = None
+    全文: List[Dict[str, str]] = field(default_factory=list)
 
-# 最高裁判所 判例集 検索結果
-# https://www.courts.go.jp/app/hanrei_jp/recentlist2
-# 下級裁判所 裁判例速報 検索結果
-# https://www.courts.go.jp/app/hanrei_jp/recentlist4
-# 知的財産 裁判例集 検索結果
-# https://www.courts.go.jp/app/hanrei_jp/recentlist4
+class CourtScraper:
+    BASE_URL = "https://www.courts.go.jp"
 
-session = Session()
+    def __init__(self, court_type: str = "recentlist2", max_pages: int = 2):
+        self.session = Session()
+        self.session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/134.0.0.0 Safari/537.36"
+            )
+        })
+        self.court_type = court_type
+        self.max_pages = max_pages
 
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
-})
+    def get_recent_judgment_urls(self) -> List[str]:
+        urls = []
 
+        for page in range(1, self.max_pages + 1):
+            response = self.session.get(
+                f"{self.BASE_URL}/app/hanrei_jp/{self.court_type}",
+                params={"page": page, "filter[recent]": True}
+            )
+            soup = BeautifulSoup(response.text, "html.parser")
+            rows = soup.select("div.module-sub-page-parts-table tr")
 
-def recent_court():
-    # debug
-    # with open("index.html", "r") as file:
-    #     r = file.read()
+            urls.extend([
+                row.find("a")["href"]
+                for row in rows
+                if row.find("a")
+            ])
+        return urls
 
-    courts = []
+    def get_judgment_detail(self, url: str) -> Judgment:
+        response = self.session.get(f"{self.BASE_URL}{url}")
+        soup = BeautifulSoup(response.text, "html.parser")
 
-    for page in range(1, 3):
+        court_data = {}
 
-        r = session.get(
-            "https://www.courts.go.jp/app/hanrei_jp/recentlist2?page=1&filter%5Brecent%5D=true",
-            params={
-                "page": page,
-                "filter[recent": True
-            }
-        )
+        title_block = soup.find("div", class_="module-sub-page-parts-default-2")
+        if title_block:
+            court_data["裁判例集"] = title_block.find("h4").text.strip()
 
-        soup = BeautifulSoup(r.text, "html.parser")
+        detail_blocks = soup.select("div.module-search-page-table-parts-result-detail")
+        for block in detail_blocks:
+            for dl in block.find_all("dl"):
+                name = dl.find("dt").text.strip()
 
-        _ = soup.find("div", class_="module-sub-page-parts-table module-search-page-table-parts-result").find_all("tr")
+                if name == "判例集等巻・号・頁":
+                    name = "判例集等巻号頁"
 
-        courts.extend([__.find("a")["href"] for __ in _])
+                if "全文" in name:
+                    value = [
+                        {
+                            a_tag.text.strip(): f"{self.BASE_URL}{a_tag['href']}"
+                        }
+                        for a_tag in dl.find_all("a")
+                    ]
+                else:
+                    value = "".join(dl.find("p").text.split())
 
-    return courts
+                court_data[name] = value
 
+        return Judgment(**court_data)
 
-def detail(url): 
-# {'裁判例集': '最高裁判所判例集',
-#  '事件名': '損害賠償請求事件',
-#  '事件番号': '令和5(受)961',
-#  '全文': [{'全文': 'https://www.courts.go.jp/app/files/hanrei_jp/869/093869_hanrei.pdf'}],
-#  '判例集等巻・号・頁': '',
-#  '判示事項': '都道府県警察所属の警部補が自殺した場合において、当該都道府県警察を置く都道府県が安全配慮義務違反に基づく損害賠償責任を負うとされた事例',
-#  '原審事件番号': '令和4(ネ)264',
-#  '原審裁判年月日': '令和5年2月17日',
-#  '原審裁判所名': '広島高等裁判所',
-#  '参照法条': '',
-#  '法廷名': '最高裁判所第二小法廷',
-#  '結果': '棄却',
-#  '裁判年月日': '令和7年3月7日',
-#  '裁判種別': '判決',
-#  '裁判要旨': ''
-# }
-
-
-    # debug
-    # with open("detail.html", "r") as file:
-    #     r = file.read()
-
-    r = session.get(f"https://www.courts.go.jp/{url}")
-
-    court_data = {}
-        
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    court_data["裁判例集"] = soup.find("div", "module-sub-page-parts-default-2").find("h4").text
-
-    _ = soup.find_all("div", class_="module-search-page-table-parts-result module-search-page-table-parts-result-detail")
-
-    for a in _:
-        for b in a.find_all("dl"):
-            name = b.find("dt").text
-            if "全文" in name:
-                value = [{__.find("a").text: "https://www.courts.go.jp" + __.find("a")["href"]} for __ in b.find_all("li")]
-            else:
-                value = "".join(b.find("p").text.split())
-
-            court_data[name] = value
-
-    return court_data
 
 if __name__ == "__main__":
-    for _ in recent_court():
-        pprint(detail(_))
-        sleep(5)
-        
+    judgment_fields = list(Judgment.__annotations__.keys())
+    print(judgment_fields)
+
+    取得器 = CourtScraper()
+    判例群 = []
+
+    for 判例url in 取得器.get_recent_judgment_urls():
+        判例 = 取得器.get_judgment_detail(判例url)
+        判例群.append(判例)
+
+    for 判例 in 判例群:
+        print("-" * 50)
+        for 項目 in judgment_fields:
+            if hasattr(判例, 項目):
+                print(f"{項目}: {getattr(判例, 項目)}")
+
