@@ -1,2 +1,9 @@
 pdfminer.six
 pdf2txt.py -t xml -o output.xml input.pdf
+
+# 最高裁判例 
+# https://www.courts.go.jp/app/hanrei_jp/recentlist2
+# 下級裁判所判例 
+# https://www.courts.go.jp/app/hanrei_jp/recentlist4
+# 知財判例 
+# https://www.courts.go.jp/app/hanrei_jp/recentlist4
